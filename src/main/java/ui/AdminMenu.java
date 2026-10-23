@@ -1,6 +1,8 @@
 package ui;
 
+import dao.SportDao;
 import dao.UserDao;
+import model.Sport;
 import model.User;
 
 import java.sql.SQLException;
@@ -9,88 +11,238 @@ import java.util.Scanner;
 
 public class AdminMenu {
 
+    private final UserDao userDao;
+    private final SportDao sportDao;
     private final Scanner scanner;
     private final User admin;
-    private final UserDao userDao;
 
-    public AdminMenu(Scanner scanner, User admin, UserDao userDao) {
+    public AdminMenu(
+            UserDao userDao,
+            SportDao sportDao,
+            Scanner scanner,
+            User admin
+    ) {
+        this.userDao = userDao;
+        this.sportDao = sportDao;
         this.scanner = scanner;
         this.admin = admin;
-        this.userDao = userDao;
     }
 
     public void show() {
-        boolean loggedIn = true;
+        int choice;
 
-        while (loggedIn) {
-            System.out.println("\n=== Admin Menu ===");
-            System.out.println("Welcome, " + admin.username());
-            System.out.println("1. View Account");
-            System.out.println("2. Approve Registrations");
-            System.out.println("3. Logout");
-            System.out.print("Choose an option: ");
+        do {
+            System.out.println("\n=== ADMIN DASHBOARD ===");
+            System.out.println("Logged in as: " + admin.username());
+            System.out.println("1. View All Users");
+            System.out.println("2. Approve / Reject Participants");
+            System.out.println("3. View Sports");
+            System.out.println("4. Evaluate and Add Sport");
+            System.out.println("5. Delete Sport");
+            System.out.println("6. View Sports Evaluation History");
+            System.out.println("0. Logout");
 
-            String choice = scanner.nextLine().trim();
+            choice = readInt("Choice: ");
 
             switch (choice) {
-                case "1" -> {
-                    System.out.println("\n--- Account Details ---");
-                    System.out.println("ID: " + admin.id());
-                    System.out.println("Username: " + admin.username());
-                    System.out.println("Role: " + admin.roles());
-                    System.out.println("Status: " + admin.status());
-                }
-                case "2" -> approveRegistrations();
-                case "3" -> {
-                    loggedIn = false;
-                    System.out.println("Logged out successfully.");
-                }
+                case 1 -> viewUsers();
+                case 2 -> managePendingUsers();
+                case 3 -> viewSports();
+                case 4 -> evaluateAndAddSport();
+                case 5 -> deleteSport();
+                case 6 -> viewEvaluationHistory();
+                case 0 -> System.out.println("Logging out...");
                 default -> System.out.println("Invalid input, try again.");
             }
+        } while (choice != 0);
+    }
+
+    private void viewUsers() {
+        try {
+            List<User> users = userDao.getAllUsers();
+
+            System.out.printf(
+                    "%-5s %-20s %-15s %-12s%n",
+                    "ID", "Username", "Role", "Status"
+            );
+
+            for (User user : users) {
+                System.out.printf(
+                        "%-5d %-20s %-15s %-12s%n",
+                        user.id(), user.username(),
+                        user.roles(), user.status()
+                );
+            }
+        } catch (SQLException e) {
+            System.out.println("Unable to load users: " + e.getMessage());
         }
     }
 
-    private void approveRegistrations() {
+    private void managePendingUsers() {
         try {
-            List<User> pendingUsers = userDao.findPendingUsers();
+            List<User> pending = userDao.getPendingUsers();
 
-            System.out.println("\n--- Pending Registrations ---");
-
-            if (pendingUsers.isEmpty()) {
-                System.out.println("No pending registrations.");
+            if (pending.isEmpty()) {
+                System.out.println("There are no pending participant accounts.");
                 return;
             }
 
-            for (User pending : pendingUsers) {
-                System.out.println("ID: " + pending.id()
-                        + " | Username: " + pending.username()
-                        + " | Role: " + pending.roles());
+            System.out.println("\n--- PENDING PARTICIPANTS ---");
+            for (User user : pending) {
+                System.out.println(
+                        "ID: " + user.id()
+                                + " | Username: " + user.username()
+                                + " | Status: " + user.status()
+                );
             }
 
-            System.out.print("Enter the ID to approve (or press Enter to cancel): ");
-            String input = scanner.nextLine().trim();
+            int id = readInt("Enter participant ID: ");
 
-            if (input.isEmpty()) {
-                System.out.println("Cancelled.");
-                return;
-            }
+            System.out.println("1. Approve");
+            System.out.println("2. Reject");
+            int action = readInt("Choice: ");
 
-            int id;
-            try {
-                id = Integer.parseInt(input);
-            } catch (NumberFormatException e) {
-                System.out.println("Invalid ID. Please enter a number.");
-                return;
-            }
+            String status;
 
-            if (userDao.approveUser(id)) {
-                System.out.println("User " + id + " approved.");
+            if (action == 1) {
+                status = "APPROVED";
+            } else if (action == 2) {
+                status = "REJECTED";
             } else {
-                System.out.println("No pending user with that ID.");
+                System.out.println("Invalid input, try again.");
+                return;
             }
 
+            if (userDao.updateStatus(id, status)) {
+                userDao.logActivity(admin.username(), "PARTICIPANT_STATUS_CHANGED",
+                        "Participant ID " + id + " set to " + status);
+                System.out.println("Participant status updated to " + status + ".");
+            } else {
+                System.out.println("No matching participant was updated.");
+            }
         } catch (SQLException e) {
-            System.out.println("Database error: " + e.getMessage());
+            System.out.println("Unable to manage accounts: " + e.getMessage());
+        }
+    }
+
+    private void viewSports() {
+        try {
+            List<Sport> sports = sportDao.getAllSports();
+
+            if (sports.isEmpty()) {
+                System.out.println("No sports are listed.");
+                return;
+            }
+
+            for (Sport sport : sports) {
+                System.out.println(sport.id() + ". " + sport.name());
+            }
+        } catch (SQLException e) {
+            System.out.println("Unable to load sports: " + e.getMessage());
+        }
+    }
+
+    private void evaluateAndAddSport() {
+        System.out.print("Enter proposed sport name: ");
+        String name = scanner.nextLine().trim();
+        if (name.isBlank()) {
+            System.out.println("Sport name cannot be empty.");
+            return;
+        }
+
+        try {
+            for (Sport sport : sportDao.getAllSports()) {
+                if (sport.name().equalsIgnoreCase(name)) {
+                    System.out.println("That sport is already in the approved sports list.");
+                    return;
+                }
+            }
+
+            System.out.println("Answer each requirement with y or n.");
+            boolean venue = askYesNo("Is a suitable venue available? ");
+            boolean equipment = askYesNo("Is the required equipment available? ");
+            boolean safety = askYesNo("Can the safety requirements be met? ");
+            boolean budget = askYesNo("Is the sport within the available budget? ");
+            boolean participants = askYesNo("Are enough participants expected? ");
+            boolean officials = askYesNo("Are rules and officials/referees available? ");
+
+            boolean applicable = venue && equipment && safety && budget && participants && officials;
+            String result = applicable ? "APPLICABLE" : "NOT_APPLICABLE";
+            sportDao.saveEvaluation(name, venue, equipment, safety, budget,
+                    participants, officials, result, admin.username());
+            userDao.logActivity(admin.username(), "SPORT_EVALUATION",
+                    name + " evaluated as " + result);
+
+            if (!applicable) {
+                System.out.println("Evaluation result: NOT APPLICABLE at this time.");
+                System.out.println("The evaluation was saved. The sport was NOT added.");
+                System.out.println("Review the failed requirements before evaluating it again.");
+                return;
+            }
+
+            if (sportDao.addSport(name)) {
+                userDao.logActivity(admin.username(), "SPORT_ADDED", name);
+                System.out.println("Evaluation result: APPLICABLE.");
+                System.out.println("Sport approved and added successfully.");
+            }
+        } catch (SQLException e) {
+            System.out.println("Could not evaluate/add sport: " + e.getMessage());
+        }
+    }
+
+    private boolean askYesNo(String prompt) {
+        while (true) {
+            System.out.print(prompt);
+            String answer = scanner.nextLine().trim().toLowerCase();
+            if (answer.equals("y") || answer.equals("yes")) return true;
+            if (answer.equals("n") || answer.equals("no")) return false;
+            System.out.println("Invalid input, try again. Enter y or n.");
+        }
+    }
+
+    private void viewEvaluationHistory() {
+        String sql = "SELECT id, sport_name, result, evaluated_by, evaluated_at FROM sport_evaluations ORDER BY id DESC";
+        try (var connection = dao.DatabaseConnection.getConnection();
+             var statement = connection.prepareStatement(sql);
+             var result = statement.executeQuery()) {
+            System.out.println("\n--- SPORTS EVALUATION HISTORY ---");
+            boolean any = false;
+            while (result.next()) {
+                any = true;
+                System.out.printf("#%d | %s | %s | By: %s | %s%n",
+                        result.getInt("id"), result.getString("sport_name"),
+                        result.getString("result"), result.getString("evaluated_by"),
+                        result.getString("evaluated_at"));
+            }
+            if (!any) System.out.println("No evaluations recorded yet.");
+        } catch (SQLException e) {
+            System.out.println("Unable to load evaluation history: " + e.getMessage());
+        }
+    }
+
+    private void deleteSport() {
+        viewSports();
+        int id = readInt("Enter sport ID to delete: ");
+
+        try {
+            if (sportDao.deleteSport(id)) {
+                userDao.logActivity(admin.username(), "SPORT_DELETED", "Sport ID " + id);
+                System.out.println("Sport deleted successfully.");
+            } else {
+                System.out.println("Sport ID not found.");
+            }
+        } catch (SQLException e) {
+            System.out.println("Unable to delete sport: " + e.getMessage());
+        }
+    }
+
+    private int readInt(String prompt) {
+        System.out.print(prompt);
+
+        try {
+            return Integer.parseInt(scanner.nextLine().trim());
+        } catch (NumberFormatException e) {
+            return -1;
         }
     }
 }

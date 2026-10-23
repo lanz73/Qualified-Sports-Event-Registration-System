@@ -11,36 +11,43 @@ import java.util.List;
 
 public class UserDao {
 
-    public boolean register(String username, String password, String role)
-            throws SQLException {
 
-        String sql = """
-                INSERT INTO users (username, password, roles, status)
-                VALUES (?, ?, ?, ?)
-                """;
+    public boolean hasAdmin() throws SQLException {
+        String sql = "SELECT 1 FROM users WHERE roles = 'ADMIN' LIMIT 1";
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet result = statement.executeQuery()) {
+            return result.next();
+        }
+    }
 
-        // Admins are gated by the admin code, so they start APPROVED.
-        String status = role.equals("ADMIN") ? "APPROVED" : "PENDING";
-
+    public boolean createAdmin(String username, String password) throws SQLException {
+        String sql = "INSERT INTO users (username, password, roles, status) VALUES (?, ?, 'ADMIN', 'APPROVED')";
         try (Connection connection = DatabaseConnection.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
-
             statement.setString(1, username);
             statement.setString(2, password);
-            statement.setString(3, role);
-            statement.setString(4, status);
-
             return statement.executeUpdate() == 1;
         }
     }
 
-    public User login(String username, String password)
+    public void logActivity(String username, String action, String details) throws SQLException {
+        String sql = "INSERT INTO activity_logs (username, action, details) VALUES (?, ?, ?)";
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, username);
+            statement.setString(2, action);
+            statement.setString(3, details);
+            statement.executeUpdate();
+        }
+    }
+
+    public boolean register(String username, String password)
             throws SQLException {
 
         String sql = """
-                SELECT id, username, password, roles, status
-                FROM users
-                WHERE username = ? AND password = ?
+                INSERT INTO users (username, password, roles, status)
+                VALUES (?, ?, 'PARTICIPANT', 'PENDING')
                 """;
 
         try (Connection connection = DatabaseConnection.getConnection();
@@ -49,20 +56,8 @@ public class UserDao {
             statement.setString(1, username);
             statement.setString(2, password);
 
-            try (ResultSet result = statement.executeQuery()) {
-                if (result.next()) {
-                    return new User(
-                            result.getInt("id"),
-                            result.getString("username"),
-                            result.getString("password"),
-                            result.getString("roles"),
-                            result.getString("status")
-                    );
-                }
-            }
+            return statement.executeUpdate() == 1;
         }
-
-        return null;
     }
 
     public boolean usernameExists(String username) throws SQLException {
@@ -79,49 +74,108 @@ public class UserDao {
         }
     }
 
-    // Returns every user whose status is PENDING.
-    public List<User> findPendingUsers() throws SQLException {
+    public User login(String username, String password, String requiredRole)
+            throws SQLException {
+
         String sql = """
                 SELECT id, username, password, roles, status
                 FROM users
-                WHERE status = 'PENDING'
+                WHERE username = ?
+                  AND password = ?
+                  AND roles = ?
+                  AND status = 'APPROVED'
+                """;
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setString(1, username);
+            statement.setString(2, password);
+            statement.setString(3, requiredRole);
+
+            try (ResultSet result = statement.executeQuery()) {
+                if (result.next()) {
+                    return readUser(result);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public List<User> getAllUsers() throws SQLException {
+        String sql = """
+                SELECT id, username, password, roles, status
+                FROM users
                 ORDER BY id
                 """;
 
-        List<User> pendingUsers = new ArrayList<>();
+        List<User> users = new ArrayList<>();
 
         try (Connection connection = DatabaseConnection.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql);
              ResultSet result = statement.executeQuery()) {
 
             while (result.next()) {
-                pendingUsers.add(new User(
-                        result.getInt("id"),
-                        result.getString("username"),
-                        result.getString("password"),
-                        result.getString("roles"),
-                        result.getString("status")
-                ));
+                users.add(readUser(result));
             }
         }
 
-        return pendingUsers;
+        return users;
     }
 
-    // Changes one PENDING user to APPROVED. Returns false if no such pending user.
-    public boolean approveUser(int id) throws SQLException {
+    public List<User> getPendingUsers() throws SQLException {
+        String sql = """
+                SELECT id, username, password, roles, status
+                FROM users
+                WHERE status = 'PENDING'
+                  AND roles = 'PARTICIPANT'
+                ORDER BY id
+                """;
+
+        List<User> users = new ArrayList<>();
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet result = statement.executeQuery()) {
+
+            while (result.next()) {
+                users.add(readUser(result));
+            }
+        }
+
+        return users;
+    }
+
+    public boolean updateStatus(int id, String status) throws SQLException {
+        if (!status.equals("APPROVED") && !status.equals("REJECTED")
+                && !status.equals("PENDING")) {
+            return false;
+        }
+
         String sql = """
                 UPDATE users
-                SET status = 'APPROVED'
-                WHERE id = ? AND status = 'PENDING'
+                SET status = ?
+                WHERE id = ? AND roles = 'PARTICIPANT'
                 """;
 
         try (Connection connection = DatabaseConnection.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
 
-            statement.setInt(1, id);
+            statement.setString(1, status);
+            statement.setInt(2, id);
 
             return statement.executeUpdate() == 1;
         }
+    }
+
+    private User readUser(ResultSet result) throws SQLException {
+        return new User(
+                result.getInt("id"),
+                result.getString("username"),
+                result.getString("password"),
+                result.getString("roles"),
+                result.getString("status")
+        );
     }
 }

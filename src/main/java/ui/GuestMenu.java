@@ -9,53 +9,32 @@ import java.util.Scanner;
 
 public class GuestMenu {
 
-    private final Scanner scanner;
     private final SportDao sportDao;
+    private final Scanner scanner;
 
-    public GuestMenu(Scanner scanner, SportDao sportDao) {
-        this.scanner = scanner;
+    public GuestMenu(SportDao sportDao, Scanner scanner) {
         this.sportDao = sportDao;
+        this.scanner = scanner;
     }
 
     public void show() {
-        boolean browsing = true;
+        System.out.println("\n=== GUEST: BROWSE SPORTS ===");
 
-        while (browsing) {
-            System.out.println("\n=== Guest Menu ===");
-            System.out.println("You are browsing as a guest (no account).");
-            System.out.println("1. View Sports");
-            System.out.println("2. Back to Main Menu");
-            System.out.print("Choose an option: ");
-
-            String choice = scanner.nextLine().trim();
-
-            switch (choice) {
-                case "1" -> viewSports();
-                case "2" -> browsing = false;
-                default -> System.out.println("Invalid input, try again.");
-            }
-        }
-    }
-
-    private void viewSports() {
         try {
-            List<Sport> sports = sportDao.findAll();
-
-            System.out.println("\n--- Sports ---");
+            List<Sport> sports = sportDao.getAllSports();
 
             if (sports.isEmpty()) {
-                System.out.println("No sports registered yet.");
-                return;
+                System.out.println("No sports are currently listed.");
+            } else {
+                for (Sport sport : sports) {
+                    System.out.println(sport.id() + ". " + sport.name());
+                }
             }
-
-            for (Sport sport : sports) {
-                System.out.println("- " + sport.name());
-            }
-
-            System.out.println("\nIf you want to join, please register.");
-
         } catch (SQLException e) {
-            System.out.println("Database error: " + e.getMessage());
+            System.out.println("Unable to load sports: " + e.getMessage());
         }
+
+        System.out.println("\nPress Enter to return to the main menu.");
+        scanner.nextLine();
     }
 }
