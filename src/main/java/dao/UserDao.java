@@ -1,3 +1,4 @@
+
 package dao;
 
 import model.User;
@@ -11,37 +12,59 @@ import java.util.List;
 
 public class UserDao {
 
-
+    // Check whether an administrator account already exists.
     public boolean hasAdmin() throws SQLException {
         String sql = "SELECT 1 FROM users WHERE roles = 'ADMIN' LIMIT 1";
+
         try (Connection connection = DatabaseConnection.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql);
              ResultSet result = statement.executeQuery()) {
+
             return result.next();
         }
     }
 
-    public boolean createAdmin(String username, String password) throws SQLException {
-        String sql = "INSERT INTO users (username, password, roles, status) VALUES (?, ?, 'ADMIN', 'APPROVED')";
+    // Create the first administrator account.
+    public boolean createAdmin(String username, String password)
+            throws SQLException {
+
+        String sql = """
+                INSERT INTO users (username, password, roles, status)
+                VALUES (?, ?, 'ADMIN', 'APPROVED')
+                """;
+
         try (Connection connection = DatabaseConnection.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
+
             statement.setString(1, username);
             statement.setString(2, password);
+
             return statement.executeUpdate() == 1;
         }
     }
 
-    public void logActivity(String username, String action, String details) throws SQLException {
-        String sql = "INSERT INTO activity_logs (username, action, details) VALUES (?, ?, ?)";
+    // Record system activity.
+    public void logActivity(String username, String action, String details)
+            throws SQLException {
+
+        String sql = """
+                INSERT INTO activity_logs (username, action, details)
+                VALUES (?, ?, ?)
+                """;
+
         try (Connection connection = DatabaseConnection.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
+
             statement.setString(1, username);
             statement.setString(2, action);
             statement.setString(3, details);
+
             statement.executeUpdate();
         }
     }
 
+    // Register a participant account.
+    // New accounts must be approved by an administrator.
     public boolean register(String username, String password)
             throws SQLException {
 
@@ -60,6 +83,7 @@ public class UserDao {
         }
     }
 
+    // Check whether a username is already registered.
     public boolean usernameExists(String username) throws SQLException {
         String sql = "SELECT 1 FROM users WHERE username = ? LIMIT 1";
 
@@ -74,6 +98,7 @@ public class UserDao {
         }
     }
 
+    // Login only if username, password, role, and account status match.
     public User login(String username, String password, String requiredRole)
             throws SQLException {
 
@@ -103,6 +128,7 @@ public class UserDao {
         return null;
     }
 
+    // Requirement 1: Return all accounts, regardless of role or status.
     public List<User> getAllUsers() throws SQLException {
         String sql = """
                 SELECT id, username, password, roles, status
@@ -124,12 +150,12 @@ public class UserDao {
         return users;
     }
 
+    // Requirement 2: Return pending accounts across ALL roles.
     public List<User> getPendingUsers() throws SQLException {
         String sql = """
                 SELECT id, username, password, roles, status
                 FROM users
                 WHERE status = 'PENDING'
-                  AND roles = 'PARTICIPANT'
                 ORDER BY id
                 """;
 
@@ -147,8 +173,27 @@ public class UserDao {
         return users;
     }
 
+    // Requirement 3: Approve a pending account by its ID.
+    public boolean approveUser(int userId) throws SQLException {
+        String sql = """
+                UPDATE users
+                SET status = 'APPROVED'
+                WHERE id = ? AND status = 'PENDING'
+                """;
+
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setInt(1, userId);
+
+            return statement.executeUpdate() == 1;
+        }
+    }
+
+    // Keep the existing status-management feature.
     public boolean updateStatus(int id, String status) throws SQLException {
-        if (!status.equals("APPROVED") && !status.equals("REJECTED")
+        if (!status.equals("APPROVED")
+                && !status.equals("REJECTED")
                 && !status.equals("PENDING")) {
             return false;
         }
@@ -169,6 +214,7 @@ public class UserDao {
         }
     }
 
+    // Convert a database row into a User record.
     private User readUser(ResultSet result) throws SQLException {
         return new User(
                 result.getInt("id"),
