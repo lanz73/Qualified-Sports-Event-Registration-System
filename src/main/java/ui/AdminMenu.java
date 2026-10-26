@@ -35,36 +35,153 @@ public class AdminMenu {
 
     public void show() {
         int choice;
-
         do {
-            System.out.println("\n=== ADMIN DASHBOARD ===");
+            System.out.println("\n================================================");
+            System.out.println("                 ADMIN DASHBOARD");
+            System.out.println("================================================");
             System.out.println("Logged in as: " + admin.username());
-            System.out.println("1. View All System Users");
+            System.out.println();
+            System.out.println("1. User Management");
+            System.out.println("2. Sports Management");
+            System.out.println("0. Logout");
+            System.out.println("------------------------------------------------");
+
+            choice = readInt("Choose a section: ");
+            switch (choice) {
+                case 1 -> showUserMenu();
+                case 2 -> showSportsMenu();
+                case 0 -> System.out.println("Logging out...");
+                default -> System.out.println("Invalid input, try again.");
+            }
+        } while (choice != 0);
+    }
+
+    private void showUserMenu() {
+        int choice;
+        do {
+            System.out.println("\n--------------- USER MANAGEMENT ---------------");
+            System.out.println("1. View All Users");
             System.out.println("2. View Pending Registrations");
             System.out.println("3. Approve User Account");
             System.out.println("4. Reject Participant Account");
-            System.out.println("5. View Sports");
-            System.out.println("6. Evaluate and Add Sport");
-            System.out.println("7. Delete Sport");
-            System.out.println("8. View Sports Evaluation History");
-            System.out.println("0. Logout");
+            System.out.println("5. Update User Role and Status");
+            System.out.println("0. Back to Admin Dashboard");
 
-            choice = readInt("Choice: ");
-
+            choice = readInt("Choose a user function: ");
             switch (choice) {
                 case 1 -> viewUsers();
                 case 2 -> viewPendingUsers();
                 case 3 -> approvePendingUser();
                 case 4 -> rejectParticipant();
-                case 5 -> viewSports();
-                case 6 -> evaluateAndAddSport();
-                case 7 -> deleteSport();
-                case 8 -> viewEvaluationHistory();
-                case 0 -> System.out.println("Logging out...");
+                case 5 -> updateUserRoleAndStatus();
+                case 0 -> System.out.println("Returning to Admin Dashboard...");
                 default -> System.out.println("Invalid input, try again.");
             }
-
         } while (choice != 0);
+    }
+
+    private void showSportsMenu() {
+        int choice;
+        do {
+            System.out.println("\n-------------- SPORTS MANAGEMENT --------------");
+            System.out.println("1. View Sports");
+            System.out.println("2. Evaluate and Add Sport");
+            System.out.println("3. Delete Sport");
+            System.out.println("4. View Sports Evaluation History");
+            System.out.println("0. Back to Admin Dashboard");
+
+            choice = readInt("Choose a sports function: ");
+            switch (choice) {
+                case 1 -> viewSports();
+                case 2 -> evaluateAndAddSport();
+                case 3 -> deleteSport();
+                case 4 -> viewEvaluationHistory();
+                case 0 -> System.out.println("Returning to Admin Dashboard...");
+                default -> System.out.println("Invalid input, try again.");
+            }
+        } while (choice != 0);
+    }
+
+    private void updateUserRoleAndStatus() {
+        try {
+            List<User> users = userDao.getAllUsers();
+            if (users.isEmpty()) {
+                System.out.println("No user accounts found.");
+                return;
+            }
+
+            System.out.println("\n--- SELECT USER TO UPDATE ---");
+            displayUsers(users);
+            int targetUserId = readInt("Enter target User ID (0 to cancel): ");
+            if (targetUserId == 0) {
+                System.out.println("Update cancelled.");
+                return;
+            }
+
+            if (targetUserId == admin.id()) {
+                System.out.println("WARNING: Modifying the currently active admin account is restricted.");
+                return;
+            }
+
+            User target = null;
+            for (User user : users) {
+                if (user.id() == targetUserId) {
+                    target = user;
+                    break;
+                }
+            }
+            if (target == null) {
+                System.out.println("User ID not found. Update cancelled.");
+                return;
+            }
+
+            System.out.println("Selected: " + target.username()
+                    + " | Current role: " + target.roles()
+                    + " | Current status: " + target.status());
+
+            String newRole = readValidRole();
+            if (newRole == null) {
+                System.out.println("Update cancelled.");
+                return;
+            }
+
+            String newStatus = readValidStatus();
+            if (newStatus == null) {
+                System.out.println("Update cancelled.");
+                return;
+            }
+
+            if (userDao.updateUserRoleAndStatus(targetUserId, newRole, newStatus)) {
+                userDao.logActivity(admin.username(), "USER_ROLE_STATUS_UPDATED",
+                        "Updated user ID " + targetUserId + " role to " + newRole
+                                + " and status to " + newStatus);
+                System.out.println("User role and status updated successfully.");
+            } else {
+                System.out.println("No changes were saved. Check the selected user.");
+            }
+        } catch (SQLException e) {
+            System.out.println("Unable to update user: " + e.getMessage());
+        }
+    }
+
+    private String readValidRole() {
+        while (true) {
+            System.out.print("Enter new role (ADMIN/PARTICIPANT, 0 to cancel): ");
+            String role = scanner.nextLine().trim().toUpperCase();
+            if (role.equals("0")) return null;
+            if (role.equals("ADMIN") || role.equals("PARTICIPANT")) return role;
+            System.out.println("Invalid role. Enter ADMIN or PARTICIPANT, or 0 to cancel.");
+        }
+    }
+
+    private String readValidStatus() {
+        while (true) {
+            System.out.print("Enter new status (APPROVED/PENDING, 0 to cancel): ");
+            String status = scanner.nextLine().trim().toUpperCase();
+            if (status.equals("0")) return null;
+            if (status.equals("APPROVED") || status.equals("PENDING")) return status;
+            System.out.println("Invalid status. Enter APPROVED or PENDING, or 0 to cancel.");
+        }
     }
 
     // Display every account regardless of role or status.
@@ -463,12 +580,14 @@ public class AdminMenu {
     // ---------- INPUT HELPER ----------
 
     private int readInt(String prompt) {
-        System.out.print(prompt);
-
-        try {
-            return Integer.parseInt(scanner.nextLine().trim());
-        } catch (NumberFormatException e) {
-            return -1;
+        while (true) {
+            System.out.print(prompt);
+            String input = scanner.nextLine().trim();
+            try {
+                return Integer.parseInt(input);
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid input, try again. Please enter a number.");
+            }
         }
     }
 }

@@ -214,6 +214,35 @@ public class UserDao {
         }
     }
 
+    // Update a user's role and status using a parameterized query.
+    public boolean updateUserRoleAndStatus(
+            int userId, String newRole, String newStatus
+    ) throws SQLException {
+        if (newRole == null || newStatus == null) {
+            return false;
+        }
+
+        newRole = newRole.trim().toUpperCase();
+        newStatus = newStatus.trim().toUpperCase();
+
+        // Match the roles and statuses allowed by DatabaseInitializer.
+        if (!newRole.equals("ADMIN") && !newRole.equals("PARTICIPANT")) {
+            return false;
+        }
+        if (!newStatus.equals("APPROVED") && !newStatus.equals("PENDING")) {
+            return false;
+        }
+
+        String sql = "UPDATE users SET roles = ?, status = ? WHERE id = ?";
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, newRole);
+            statement.setString(2, newStatus);
+            statement.setInt(3, userId);
+            return statement.executeUpdate() == 1;
+        }
+    }
+
     // Convert a database row into a User record.
     private User readUser(ResultSet result) throws SQLException {
         return new User(
