@@ -43,26 +43,6 @@ public class UserDao {
         }
     }
 
-    // Record system activity.
-    public void logActivity(String username, String action, String details)
-            throws SQLException {
-
-        String sql = """
-                INSERT INTO activity_logs (username, action, details)
-                VALUES (?, ?, ?)
-                """;
-
-        try (Connection connection = DatabaseConnection.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
-
-            statement.setString(1, username);
-            statement.setString(2, action);
-            statement.setString(3, details);
-
-            statement.executeUpdate();
-        }
-    }
-
     // Register a participant account.
     // New accounts must be approved by an administrator.
     public boolean register(String username, String password)
@@ -180,14 +160,19 @@ public class UserDao {
                 SET status = 'APPROVED'
                 WHERE id = ? AND status = 'PENDING'
                 """;
-
         try (Connection connection = DatabaseConnection.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
-
             statement.setInt(1, userId);
-
             return statement.executeUpdate() == 1;
         }
+    }
+
+    // Approve a participant and record the administrator who performed it.
+    public boolean approveUser(int userId, int adminId) throws SQLException {
+        boolean approved = approveUser(userId);
+        if (approved) new ActivityLogDao().logAction(adminId, "USER_APPROVED",
+                "Admin " + adminId + " approved User " + userId + ".");
+        return approved;
     }
 
     // Keep the existing status-management feature.
@@ -238,6 +223,30 @@ public class UserDao {
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, newRole);
             statement.setString(2, newStatus);
+            statement.setInt(3, userId);
+            return statement.executeUpdate() == 1;
+        }
+    }
+
+    // Update role/status and record the administrator who made the change.
+    public boolean updateUserRoleAndStatus(
+            int userId, String newRole, String newStatus, int adminId
+    ) throws SQLException {
+        boolean updated = updateUserRoleAndStatus(userId, newRole, newStatus);
+        if (updated) new ActivityLogDao().logAction(adminId, "USER_UPDATED",
+                "Admin " + adminId + " updated User " + userId + " role to "
+                        + newRole.trim().toUpperCase() + " and status to "
+                        + newStatus.trim().toUpperCase() + ".");
+        return updated;
+    }
+
+    // Update only the currently authenticated participant's own profile.
+    public boolean updateOwnProfile(int userId, String newUsername, String newPassword) throws SQLException {
+        String sql = "UPDATE users SET username = ?, password = ? WHERE id = ? AND roles = 'PARTICIPANT' AND status = 'APPROVED'";
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, newUsername.trim());
+            statement.setString(2, newPassword);
             statement.setInt(3, userId);
             return statement.executeUpdate() == 1;
         }

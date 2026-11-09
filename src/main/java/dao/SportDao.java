@@ -1,6 +1,7 @@
 package dao;
 
 import model.Sport;
+import model.SportEvaluation;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -61,5 +62,28 @@ public class SportDao {
             statement.setString(9, adminUsername);
             statement.executeUpdate();
         }
+    }
+
+    // Moved-out SQL for the evaluation history screen (keeps SQL out of the UI layer).
+    public List<SportEvaluation> getEvaluationHistory() throws SQLException {
+        String sql = """
+                SELECT id, sport_name, result, evaluated_by, evaluated_at
+                FROM sport_evaluations
+                ORDER BY id DESC
+                """;
+        List<SportEvaluation> history = new ArrayList<>();
+        try (Connection connection = DatabaseConnection.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql);
+             ResultSet result = statement.executeQuery()) {
+            while (result.next()) {
+                history.add(new SportEvaluation(
+                        result.getInt("id"),
+                        result.getString("sport_name"),
+                        result.getString("result"),
+                        result.getString("evaluated_by"),
+                        result.getString("evaluated_at")));
+            }
+        }
+        return history;
     }
 }

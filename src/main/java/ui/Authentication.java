@@ -1,19 +1,22 @@
 package ui;
 
 import dao.SportDao;
+import dao.EventDao;
+import dao.RegistrationDao;
 import dao.UserDao;
+import dao.ActivityLogDao;
 import model.User;
 
 import java.sql.SQLException;
 import java.util.Scanner;
 
 public class Authentication {
-
-    private static final String ADMIN_CODE = "1234";
-
     private final UserDao userDao;
+    private final ActivityLogDao activityLogDao = new ActivityLogDao();
     private final SportDao sportDao;
     private final Scanner scanner;
+    private final EventDao eventDao = new EventDao();
+    private final RegistrationDao registrationDao = new RegistrationDao();
 
     public Authentication(
             UserDao userDao,
@@ -66,14 +69,19 @@ public class Authentication {
                 return;
             }
 
+            activityLogDao.logAction(user.id(), "USER_LOGIN",
+                    "User " + user.username() + " (ID: " + user.id() + ") logged in.");
             System.out.println("Welcome, " + user.username() + "!");
 
             if (role.equals("ADMIN")) {
-                new AdminMenu(userDao, sportDao, scanner, user).show();
+                EventManagementMenu eventMenu = new EventManagementMenu(eventDao, sportDao, scanner, user);
+                new AdminMenu(userDao, sportDao, scanner, user, eventMenu).show();
             } else {
-                new UserMenu(user, sportDao, scanner).show();
+                new UserMenu(user, userDao, sportDao, eventDao, registrationDao, scanner).show();
             }
 
+            activityLogDao.logAction(user.id(), "USER_LOGOUT",
+                    "User " + user.username() + " (ID: " + user.id() + ") logged out.");
             System.out.println("Logged out.");
         } catch (SQLException e) {
             System.out.println("Login error: " + e.getMessage());

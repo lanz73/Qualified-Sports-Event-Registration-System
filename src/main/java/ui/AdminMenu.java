@@ -3,6 +3,8 @@ package ui;
 
 import dao.DatabaseConnection;
 import dao.SportDao;
+import dao.ActivityLogDao;
+import model.ActivityLog;
 import dao.UserDao;
 import model.Sport;
 import model.User;
@@ -17,20 +19,24 @@ import java.util.Scanner;
 public class AdminMenu {
 
     private final UserDao userDao;
+    private final ActivityLogDao activityLogDao = new ActivityLogDao();
     private final SportDao sportDao;
     private final Scanner scanner;
     private final User admin;
+    private final EventManagementMenu eventManagementMenu;
 
     public AdminMenu(
             UserDao userDao,
             SportDao sportDao,
             Scanner scanner,
-            User admin
+            User admin,
+            EventManagementMenu eventManagementMenu
     ) {
         this.userDao = userDao;
         this.sportDao = sportDao;
         this.scanner = scanner;
         this.admin = admin;
+        this.eventManagementMenu = eventManagementMenu;
     }
 
     public void show() {
@@ -43,6 +49,8 @@ public class AdminMenu {
             System.out.println();
             System.out.println("1. User Management");
             System.out.println("2. Sports Management");
+            System.out.println("3. Event Management");
+            System.out.println("4. View System Audit Logs");
             System.out.println("0. Logout");
             System.out.println("------------------------------------------------");
 
@@ -50,6 +58,8 @@ public class AdminMenu {
             switch (choice) {
                 case 1 -> showUserMenu();
                 case 2 -> showSportsMenu();
+                case 3 -> eventManagementMenu.show();
+                case 4 -> showAuditLogMenu();
                 case 0 -> System.out.println("Logging out...");
                 default -> System.out.println("Invalid input, try again.");
             }
@@ -151,10 +161,7 @@ public class AdminMenu {
                 return;
             }
 
-            if (userDao.updateUserRoleAndStatus(targetUserId, newRole, newStatus)) {
-                userDao.logActivity(admin.username(), "USER_ROLE_STATUS_UPDATED",
-                        "Updated user ID " + targetUserId + " role to " + newRole
-                                + " and status to " + newStatus);
+            if (userDao.updateUserRoleAndStatus(targetUserId, newRole, newStatus, admin.id())) {
                 System.out.println("User role and status updated successfully.");
             } else {
                 System.out.println("No changes were saved. Check the selected user.");
@@ -284,12 +291,7 @@ public class AdminMenu {
                 return;
             }
 
-            if (userDao.approveUser(id)) {
-                userDao.logActivity(
-                        admin.username(),
-                        "USER_APPROVED",
-                        "Approved user ID " + id
-                );
+            if (userDao.approveUser(id, admin.id())) {
 
                 System.out.println("User account approved successfully.");
             } else {
@@ -345,11 +347,8 @@ public class AdminMenu {
             }
 
             if (userDao.updateStatus(id, "REJECTED")) {
-                userDao.logActivity(
-                        admin.username(),
-                        "USER_REJECTED",
-                        "Rejected participant ID " + id
-                );
+                activityLogDao.logAction(admin.id(), "USER_REJECTED",
+                        "Admin " + admin.id() + " rejected Participant " + id);
 
                 System.out.println("Participant account rejected.");
             } else {
@@ -446,11 +445,8 @@ public class AdminMenu {
                     admin.username()
             );
 
-            userDao.logActivity(
-                    admin.username(),
-                    "SPORT_EVALUATION",
-                    name + " evaluated as " + result
-            );
+            activityLogDao.logAction(admin.id(), "SPORT_EVALUATED",
+                    "Admin " + admin.id() + " evaluated " + name + " as " + result);
 
             if (!applicable) {
                 System.out.println(
@@ -466,11 +462,8 @@ public class AdminMenu {
             }
 
             if (sportDao.addSport(name)) {
-                userDao.logActivity(
-                        admin.username(),
-                        "SPORT_ADDED",
-                        name
-                );
+                activityLogDao.logAction(admin.id(), "SPORT_ADDED",
+                        "Admin " + admin.id() + " added sport " + name);
 
                 System.out.println("Evaluation result: APPLICABLE.");
                 System.out.println("Sport approved and added successfully.");
@@ -561,11 +554,8 @@ public class AdminMenu {
 
         try {
             if (sportDao.deleteSport(id)) {
-                userDao.logActivity(
-                        admin.username(),
-                        "SPORT_DELETED",
-                        "Sport ID " + id
-                );
+                activityLogDao.logAction(admin.id(), "SPORT_DELETED",
+                        "Admin " + admin.id() + " deleted Sport ID " + id);
 
                 System.out.println("Sport deleted successfully.");
             } else {
@@ -574,6 +564,75 @@ public class AdminMenu {
 
         } catch (SQLException e) {
             System.out.println("Unable to delete sport: " + e.getMessage());
+        }
+    }
+
+    // ---------- SYSTEM AUDIT LOGS ----------
+
+    private void showAuditLogMenu() {
+        int choice;
+        do {
+            System.out.println("\n========== SYSTEM AUDIT LOGS ==========");
+            System.out.println("1. View All System Logs");
+            System.out.println("2. Filter Logs by User ID");
+            System.out.println("3. Clear Historical Logs");
+            System.out.println("0. Back");
+            choice = readInt("Choose an option: ");
+            switch (choice) {
+                case 1 -> displayAuditLogs(loadAllLogs());
+                case 2 -> filterAuditLogsByUser();
+                case 3 -> clearAuditLogs();
+                case 0 -> System.out.println("Returning to Admin Dashboard...");
+                default -> System.out.println("Invalid input, try again.");
+            }
+        } while (choice != 0);
+    }
+
+    private List<ActivityLog> loadAllLogs() {
+        try { return activityLogDao.getAllLogs(); }
+        catch (SQLException e) {
+            System.out.println("Unable to load audit logs: " + e.getMessage());
+            return List.of();
+        }
+    }
+
+    private void filterAuditLogsByUser() {
+        int userId = readInt("Enter User ID to filter (0 to cancel): ");
+        if (userId == 0) return;
+        if (userId < 0) { System.out.println("User ID must be a positive number."); return; }
+        try { displayAuditLogs(activityLogDao.getLogsByUserId(userId)); }
+        catch (SQLException e) { System.out.println("Unable to filter logs: " + e.getMessage()); }
+    }
+
+    private void clearAuditLogs() {
+        System.out.print("Clear ALL historical audit logs? Type YES to confirm: ");
+        if (!scanner.nextLine().trim().equalsIgnoreCase("YES")) {
+            System.out.println("Log clearing cancelled.");
+            return;
+        }
+        try {
+            int deleted = activityLogDao.clearAllLogs();
+            System.out.println(deleted + " historical log record(s) cleared.");
+        } catch (SQLException e) {
+            System.out.println("Unable to clear logs: " + e.getMessage());
+        }
+    }
+
+    private void displayAuditLogs(List<ActivityLog> logs) {
+        System.out.println();
+        System.out.printf("%-5s | %-8s | %-18s | %-35s | %-20s%n",
+                "ID", "USER ID", "ACTION TYPE", "DESCRIPTION", "TIMESTAMP");
+        System.out.println("---------------------------------------------------------------------------------------------------------------");
+        if (logs.isEmpty()) {
+            System.out.println("No audit logs found.");
+            return;
+        }
+        for (ActivityLog log : logs) {
+            String description = log.description();
+            if (description.length() > 35) description = description.substring(0, 32) + "...";
+            System.out.printf("%-5d | %-8s | %-18s | %-35s | %-20s%n",
+                    log.id(), log.userId() == 0 ? "SYSTEM" : log.userId(),
+                    log.actionType(), description, log.timestamp());
         }
     }
 
